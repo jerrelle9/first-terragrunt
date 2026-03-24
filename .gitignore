@@ -1,1 +1,5 @@
-.terragrunt-cache
+_env/common.hcl
+.terragrunt-cache/
+.terraform/
+*.tfstate
+*.tfstate.backup

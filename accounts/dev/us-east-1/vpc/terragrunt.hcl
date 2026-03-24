@@ -1,5 +1,5 @@
 include{
-  path = find_in_parent_folders("env/terragrunt.hcl")
+  path = find_in_parent_folders()
 }
 
 locals {
@@ -16,3 +16,4 @@ inputs = {
   name = "dev-vpc"
   cidr_block = "10.0.0.0/16"
 }
+

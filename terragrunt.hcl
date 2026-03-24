@@ -3,7 +3,7 @@ remote_state{
 
     config = {
         bucket = "aws-infrastructure1"
-        key = "dev/us-east-1/vpc/terraform.tfstate"
+        key = "${path_relative_to_include()}/terraform.tfstate"
         region = "us-east-1"
         encrypt = true
         dynamodb_table = "terraform-locks"
@@ -14,6 +14,10 @@ remote_state{
 generate "provider"{
     path = "provider.tf"
     if_exists = "overwrite"
+
     contents = <<EOF
+provider "aws"{
+    region = "us-east-1"
+}
 EOF
 }

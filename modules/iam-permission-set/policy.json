@@ -1,0 +1,61 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ReadAll",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:Describe*",
+                "rds:Describe*",
+                "ecs:Describe*",
+                "ecs:List*"
+            ],
+            "Resource": "*"
+        },
+
+        {
+            "Sid": "EC2LimitedControl",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:StartInstances",
+                "ec2:StopInstances",
+                "ec2:RebootInstances"
+            ],
+            "Resource": "*",
+            "Condition": {
+                "StringEquals":{
+                    "ec2:ResourceTag/Environment": "dev"
+                }
+            }
+        },
+
+        {
+            "Sid": "RDSLimitedControl",
+            "Effect": "Allow",
+            "Action": [
+                "rds:StartDBInstance",
+                "rds:StopDBInstance"
+            ],
+            "Resource": "*",
+            "Condition": {
+                "StringEquals":{
+                    "ec2:ResourceTag/Environment": "dev"
+                }
+            }
+        },
+
+        {
+            "Sid": "ECSLimitedControl",
+            "Effect": "Allow",
+            "Action": [
+                "ecs:UpdateService"
+            ],
+            "Resource": "*",
+            "Condition": {
+                "StringEquals":{
+                    "ec2:ResourceTag/Environment": "dev"
+                }
+            }
+        }
+    ]
+}

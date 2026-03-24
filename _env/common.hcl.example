@@ -1,0 +1,3 @@
+locals {
+  instance_arn = "arn:aws:sso:::instance/ssoins-REPLACE_ME"
+}

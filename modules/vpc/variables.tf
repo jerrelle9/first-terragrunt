@@ -17,3 +17,8 @@ variable "environment" {
   description = "Development"
   type = string
 }
+
+variable "public_subnet_id" {
+  description = "idk what to put here"
+  type = string
+}
