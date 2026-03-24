@@ -1,6 +1,6 @@
 # aws-intern-infrastructure
 
-Enterprise-style AWS Infrastructure as Code repository using **Terraform** and **Terragrunt**. Phase 1 deploys a single VPC in the `dev` account (`us-east-1`), establishing the folder conventions and module patterns used for all future projects.
+Enterprise-style AWS Infrastructure as Code repository using **Terraform** and **Terragrunt**. Deploys VPC, EC2 instances, and AWS IAM Identity Center (SSO) permission sets to a `dev` account in `us-east-1`, establishing folder conventions and module patterns for future projects.
 
 ---
 
@@ -9,28 +9,42 @@ Enterprise-style AWS Infrastructure as Code repository using **Terraform** and *
 ```
 aws-intern-infrastructure/
 ├── _env/
-│   └── terragrunt.hcl          # Root config: provider, remote state (inherited by all modules)
+│   └── terragrunt.hcl              # Root config: provider, remote state (inherited by all modules)
 ├── accounts/
 │   └── dev/
-│       ├── account.hcl         # Account-level vars: name, ID, region
+│       ├── account.hcl             # Account-level vars: environment, account ID, region
 │       └── us-east-1/
-│           └── vpc/
-│               └── terragrunt.hcl  # VPC deployment inputs for dev/us-east-1
+│           ├── vpc/
+│           │   └── terragrunt.hcl
+│           ├── ec2/
+│           │   └── terragrunt.hcl
+│           └── iam/permission-set/
+│               ├── terragrunt.hcl
+│               └── policy.json
 └── modules/
-    └── vpc/
-        ├── main.tf             # VPC, subnets, IGW, NAT Gateway, route tables
-        ├── variables.tf        # Input variable declarations
-        └── outputs.tf          # Exported values (VPC ID, subnet IDs, etc.)
+    ├── vpc/
+    │   ├── main.tf                 # VPC, subnets, IGW, route tables
+    │   ├── outputs.tf
+    │   └── variables.tf
+    ├── ec2/
+    │   ├── main.tf                 # EC2 instances, security groups
+    │   ├── outputs.tf
+    │   └── variables.tf
+    └── iam-permission-set/
+        ├── main.tf                 # SSO permission sets
+        ├── outputs.tf
+        ├── variables.tf
+        └── policy.json             # IAM policy
 ```
 
 ### Design Conventions
 
 | Layer | Purpose |
 |---|---|
-| `_env/terragrunt.hcl` | Single source of truth for provider config and S3 remote state |
-| `accounts/<env>/account.hcl` | Per-account variables (account ID, region) — no duplication |
-| `accounts/<env>/<region>/<service>/terragrunt.hcl` | Deployment unit — passes inputs to a module |
-| `modules/<service>/` | Reusable, environment-agnostic Terraform module |
+| `_env/terragrunt.hcl` | Root config provider & S3 remote state (inherited by all) |
+| `accounts/<env>/account.hcl` | Per-account variables (environment, account ID, region) |
+| `accounts/<env>/<region>/<service>/terragrunt.hcl` | Deployment unit — passes inputs to module |
+| `modules/<service>/` | Reusable, environment-agnostic Terraform modules |
 
 ---
 
@@ -42,20 +56,35 @@ aws-intern-infrastructure/
 | [Terragrunt](https://terragrunt.gruntwork.io/docs/getting-started/install/) | `>= 0.50` |
 | [AWS CLI](https://aws.amazon.com/cli/) | `>= 2.x` |
 
-AWS credentials must be available in your environment (e.g. `aws configure`, environment variables, or an IAM role).
+AWS credentials must be available in your environment (e.g., `aws configure`, environment variables, or an IAM role).
 
 ---
 
-## Bootstrap (first-time only)
+## Initial Setup
 
-Terragrunt manages remote state automatically, but the S3 bucket and DynamoDB table must exist before the first `apply`. Create them once per account:
+### 1. Configure AWS Account
+
+Update `accounts/dev/account.hcl` with your AWS account details:
+
+```hcl
+locals {
+  environment = "dev"
+  account_id  = "123456789012"   # ← Replace with your account ID
+  aws_region  = "us-east-1"
+}
+```
+
+### 2. Bootstrap S3 & DynamoDB (first-time only)
+
+Terragrunt requires an S3 bucket and DynamoDB table for remote state and locking:
 
 ```bash
-# Replace with your actual account ID
+# Create S3 bucket
 aws s3api create-bucket \
   --bucket terraform-state-123456789012-us-east-1 \
   --region us-east-1
 
+# Create DynamoDB lock table
 aws dynamodb create-table \
   --table-name terraform-locks \
   --attribute-definitions AttributeName=LockID,AttributeType=S \
@@ -64,40 +93,107 @@ aws dynamodb create-table \
   --region us-east-1
 ```
 
-Then update `accounts/dev/account.hcl` with your real AWS account ID:
+### 3. Enable AWS IAM Identity Center (SSO)
+
+Required for the IAM permission-set module:
+
+1. Go to **AWS Console** → **IAM Identity Center**
+2. Click **Enable**
+3. Choose **AWS IAM Identity Center directory**
+4. Once enabled, go to **Settings** and copy your **Instance ARN**
+5. Update the instance ARN in `accounts/dev/us-east-1/iam/permission-set/terragrunt.hcl`:
 
 ```hcl
-locals {
-  account_name = "dev"
-  account_id   = "123456789012"   # ← your account ID here
-  aws_region   = "us-east-1"
+inputs = {
+  instance_arn = "arn:aws:sso:::instance/ssoins-xxxxxxxxxxxxxxxxxx"  # ← Your instance ARN
+  ...
 }
 ```
 
 ---
 
-## Deploying the Dev VPC
+## Deployment
+
+### Deploy All Components
 
 ```bash
-# Navigate to the VPC deployment unit
+cd accounts/dev/us-east-1
+
+# Deploy all modules (VPC → EC2 → IAM)
+terragrunt run-all plan
+terragrunt run-all apply
+```
+
+### Deploy Individual Components
+
+**VPC:**
+```bash
 cd accounts/dev/us-east-1/vpc
-
-# Preview the plan
 terragrunt plan
-
-# Apply
 terragrunt apply
 ```
 
-Terragrunt will automatically generate `provider.tf` and `backend.tf` before running Terraform.
+**EC2 (requires VPC):**
+```bash
+cd accounts/dev/us-east-1/ec2
+terragrunt plan
+terragrunt apply
+```
 
-### What Gets Deployed
+**IAM Permission Sets (requires SSO enabled):**
+```bash
+cd accounts/dev/us-east-1/iam/permission-set
+terragrunt plan
+terragrunt apply
+```
+
+---
+
+## What Gets Deployed
+
+### VPC Module
 
 | Resource | Details |
 |---|---|
-| VPC | `10.0.0.0/16`, DNS support + hostnames enabled |
-| Public subnets | `10.0.1.0/24`, `10.0.2.0/24` — `us-east-1a` / `us-east-1b` |
-| Private subnets | `10.0.11.0/24`, `10.0.12.0/24` — `us-east-1a` / `us-east-1b` |
+| VPC | `10.0.0.0/16`, DNS support enabled |
+| Public subnets | `10.0.1.0/24` (us-east-1a), `10.0.2.0/24` (us-east-1b) |
+| Private subnets | `10.0.11.0/24` (us-east-1a), `10.0.12.0/24` (us-east-1b) |
+| Internet Gateway | Routes public traffic |
+| Route Tables | Public + private routes configured |
+
+### EC2 Module
+
+| Resource | Details |
+|---|---|
+| EC2 Instance | Amazon Linux 2, t2.micro (configurable) |
+| Security Group | SSH (port 22) ingress, all egress allowed |
+| Auto-assigned Public IP | Enabled |
+| Tags | Name + Environment |
+
+### IAM Permission Set Module
+
+| Resource | Details |
+|---|---|
+| Permission Set | ReadAll-LimitedWrite-Dev (configurable) |
+| Inline Policy | JSON policy (see `policy.json`) |
+
+---
+
+## Cleanup
+
+To destroy all infrastructure:
+
+```bash
+cd accounts/dev/us-east-1
+terragrunt run-all destroy
+```
+
+To destroy specific components:
+
+```bash
+cd accounts/dev/us-east-1/ec2
+terragrunt destroy
+```
 | Internet Gateway | Attached to VPC, routed from public subnets |
 | NAT Gateway | Single instance (cost-optimised for dev), routed from private subnets |
 | Route tables | Separate tables for public and private tiers |
